@@ -185,12 +185,47 @@ export default function App() {
       if (game) game.player.boosting = false;
     };
 
+    // Keyboard support: arrow keys set direction, space = boost
+    const keysDown = new Set<string>();
+    const KEYBOARD_DIST = 300;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+      keysDown.add(e.key);
+      if (e.key === ' ') {
+        const game = gameRef.current;
+        if (game) game.player.boosting = true;
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      keysDown.delete(e.key);
+      if (e.key === ' ') {
+        const game = gameRef.current;
+        if (game) game.player.boosting = false;
+      }
+    };
+    // Poll keyboard direction each frame via an interval
+    const keyInterval = setInterval(() => {
+      const game = gameRef.current;
+      if (!game || game.gameOver) return;
+      let dx = 0, dy = 0;
+      if (keysDown.has('ArrowLeft')) dx -= 1;
+      if (keysDown.has('ArrowRight')) dx += 1;
+      if (keysDown.has('ArrowUp')) dy -= 1;
+      if (keysDown.has('ArrowDown')) dy += 1;
+      if (dx !== 0 || dy !== 0) {
+        const head = game.player.segments[0];
+        game.mousePos = { x: head.x + dx * KEYBOARD_DIST, y: head.y + dy * KEYBOARD_DIST };
+      }
+    }, 16);
+
     canvas.addEventListener("mousemove", onMouseMove);
     canvas.addEventListener("mousedown", onMouseDown);
     canvas.addEventListener("mouseup", onMouseUp);
     canvas.addEventListener("touchmove", onTouchMove, { passive: false });
     canvas.addEventListener("touchstart", onTouchStart, { passive: false });
     canvas.addEventListener("touchend", onTouchEnd);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
 
     return () => {
       canvas.removeEventListener("mousemove", onMouseMove);
@@ -199,6 +234,9 @@ export default function App() {
       canvas.removeEventListener("touchmove", onTouchMove);
       canvas.removeEventListener("touchstart", onTouchStart);
       canvas.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      clearInterval(keyInterval);
     };
   }, [screen]);
 
