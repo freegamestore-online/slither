@@ -1,17 +1,652 @@
+import { useEffect, useRef, useCallback, useState } from "react";
 import { Shell } from "./components/Shell";
 
+// --- Types ---
+interface Vec2 {
+  x: number;
+  y: number;
+}
+
+interface Snake {
+  id: number;
+  segments: Vec2[];
+  color: string;
+  speed: number;
+  angle: number;
+  alive: boolean;
+  boosting: boolean;
+  score: number;
+}
+
+interface Food {
+  x: number;
+  y: number;
+  color: string;
+  radius: number;
+}
+
+interface GameState {
+  player: Snake;
+  bots: Snake[];
+  food: Food[];
+  mousePos: Vec2;
+  camera: Vec2;
+  gameOver: boolean;
+  started: boolean;
+}
+
+// --- Constants ---
+const WORLD_SIZE = 3000;
+const WORLD_RADIUS = WORLD_SIZE / 2;
+const SEGMENT_SPACING = 8;
+const BASE_SPEED = 3;
+const BOOST_SPEED = 6;
+const FOOD_COUNT = 300;
+const BOT_COUNT = 6;
+const SNAKE_RADIUS = 8;
+const FOOD_RADIUS = 5;
+const INITIAL_LENGTH = 20;
+const MINIMAP_SIZE = 140;
+const MINIMAP_MARGIN = 16;
+
+const SNAKE_COLORS = [
+  "#ff3366", "#33ff66", "#3366ff", "#ffcc33",
+  "#ff66cc", "#66ffcc", "#cc66ff", "#ff9933",
+];
+
+// --- Helpers ---
+function randomInCircle(radius: number): Vec2 {
+  const angle = Math.random() * Math.PI * 2;
+  const r = Math.sqrt(Math.random()) * radius * 0.85;
+  return { x: WORLD_RADIUS + Math.cos(angle) * r, y: WORLD_RADIUS + Math.sin(angle) * r };
+}
+
+function dist(a: Vec2, b: Vec2): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function angleTo(from: Vec2, to: Vec2): number {
+  return Math.atan2(to.y - from.y, to.x - from.x);
+}
+
+function normalizeAngle(a: number): number {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+function createFood(): Food {
+  const pos = randomInCircle(WORLD_RADIUS);
+  const colors = ["#ff4488", "#44ff88", "#4488ff", "#ffaa44", "#ff44ff", "#44ffff", "#ffff44"];
+  return { x: pos.x, y: pos.y, color: colors[Math.floor(Math.random() * colors.length)], radius: FOOD_RADIUS };
+}
+
+function createSnake(id: number, color: string): Snake {
+  const pos = randomInCircle(WORLD_RADIUS * 0.7);
+  const angle = Math.random() * Math.PI * 2;
+  const segments: Vec2[] = [];
+  for (let i = 0; i < INITIAL_LENGTH; i++) {
+    segments.push({
+      x: pos.x - Math.cos(angle) * i * SEGMENT_SPACING,
+      y: pos.y - Math.sin(angle) * i * SEGMENT_SPACING,
+    });
+  }
+  return { id, segments, color, speed: BASE_SPEED, angle, alive: true, boosting: false, score: INITIAL_LENGTH };
+}
+
+// --- Component ---
+type Screen = "start" | "playing" | "gameover";
+
 export default function App() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gameRef = useRef<GameState | null>(null);
+  const animRef = useRef<number>(0);
+  const [screen, setScreen] = useState<Screen>("start");
+  const [finalScore, setFinalScore] = useState(0);
+  const scoreRef = useRef(0);
+
+  const initGame = useCallback(() => {
+    const player = createSnake(0, "#00ff88");
+    const bots: Snake[] = [];
+    for (let i = 0; i < BOT_COUNT; i++) {
+      bots.push(createSnake(i + 1, SNAKE_COLORS[i % SNAKE_COLORS.length]));
+    }
+    const food: Food[] = [];
+    for (let i = 0; i < FOOD_COUNT; i++) {
+      food.push(createFood());
+    }
+    const head = player.segments[0];
+    gameRef.current = {
+      player,
+      bots,
+      food,
+      mousePos: { x: head.x, y: head.y },
+      camera: { x: head.x, y: head.y },
+      gameOver: false,
+      started: true,
+    };
+  }, []);
+
+  const startGame = useCallback(() => {
+    initGame();
+    setScreen("playing");
+  }, [initGame]);
+
+  // Input handlers
+  useEffect(() => {
+    if (screen !== "playing") return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const updateMouse = (clientX: number, clientY: number) => {
+      const game = gameRef.current;
+      if (!game || game.gameOver) return;
+      const rect = canvas.getBoundingClientRect();
+      const cx = rect.width / 2;
+      const cy = rect.height / 2;
+      const dx = clientX - rect.left - cx;
+      const dy = clientY - rect.top - cy;
+      // Convert screen offset to world position relative to camera
+      game.mousePos = { x: game.camera.x + dx, y: game.camera.y + dy };
+    };
+
+    const onMouseMove = (e: MouseEvent) => updateMouse(e.clientX, e.clientY);
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        const t = e.touches[0];
+        updateMouse(t.clientX, t.clientY);
+      }
+      e.preventDefault();
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        const t = e.touches[0];
+        updateMouse(t.clientX, t.clientY);
+      }
+      if (e.touches.length >= 2) {
+        const game = gameRef.current;
+        if (game) game.player.boosting = true;
+      }
+      e.preventDefault();
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        const game = gameRef.current;
+        if (game) game.player.boosting = false;
+      }
+    };
+    const onMouseDown = () => {
+      const game = gameRef.current;
+      if (game) game.player.boosting = true;
+    };
+    const onMouseUp = () => {
+      const game = gameRef.current;
+      if (game) game.player.boosting = false;
+    };
+
+    canvas.addEventListener("mousemove", onMouseMove);
+    canvas.addEventListener("mousedown", onMouseDown);
+    canvas.addEventListener("mouseup", onMouseUp);
+    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    canvas.addEventListener("touchend", onTouchEnd);
+
+    return () => {
+      canvas.removeEventListener("mousemove", onMouseMove);
+      canvas.removeEventListener("mousedown", onMouseDown);
+      canvas.removeEventListener("mouseup", onMouseUp);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [screen]);
+
+  // Game loop
+  useEffect(() => {
+    if (screen !== "playing") return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let running = true;
+
+    const resizeCanvas = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+
+    const moveSnake = (snake: Snake, targetAngle: number) => {
+      if (!snake.alive) return;
+
+      // Smooth turning
+      let diff = normalizeAngle(targetAngle - snake.angle);
+      const turnRate = 0.08;
+      snake.angle += diff * turnRate;
+
+      const speed = snake.boosting ? BOOST_SPEED : BASE_SPEED;
+      snake.speed = speed;
+
+      // Move head
+      const head = snake.segments[0];
+      const newHead = {
+        x: head.x + Math.cos(snake.angle) * speed,
+        y: head.y + Math.sin(snake.angle) * speed,
+      };
+      snake.segments.unshift(newHead);
+
+      // Maintain segment spacing
+      while (snake.segments.length > snake.score) {
+        snake.segments.pop();
+      }
+
+      // Boosting shrinks
+      if (snake.boosting && snake.score > 10) {
+        if (Math.random() < 0.1) {
+          snake.score--;
+          if (snake.segments.length > snake.score) {
+            snake.segments.pop();
+          }
+        }
+      }
+    };
+
+    const checkBoundary = (snake: Snake, game: GameState) => {
+      if (!snake.alive) return;
+      const head = snake.segments[0];
+      const d = dist(head, { x: WORLD_RADIUS, y: WORLD_RADIUS });
+      if (d > WORLD_RADIUS) {
+        killSnake(snake, game);
+      }
+    };
+
+    const killSnake = (snake: Snake, game: GameState) => {
+      snake.alive = false;
+      // Drop food along body
+      for (let i = 0; i < snake.segments.length; i += 3) {
+        const seg = snake.segments[i];
+        game.food.push({
+          x: seg.x + (Math.random() - 0.5) * 10,
+          y: seg.y + (Math.random() - 0.5) * 10,
+          color: snake.color,
+          radius: FOOD_RADIUS + 1,
+        });
+      }
+    };
+
+    const checkFoodCollision = (snake: Snake, game: GameState) => {
+      if (!snake.alive) return;
+      const head = snake.segments[0];
+      for (let i = game.food.length - 1; i >= 0; i--) {
+        const f = game.food[i];
+        if (dist(head, f) < SNAKE_RADIUS + f.radius) {
+          game.food.splice(i, 1);
+          snake.score += 2;
+          // Replenish food
+          game.food.push(createFood());
+        }
+      }
+    };
+
+    const checkSnakeCollision = (snake: Snake, allSnakes: Snake[], game: GameState) => {
+      if (!snake.alive) return;
+      const head = snake.segments[0];
+      for (const other of allSnakes) {
+        if (other.id === snake.id || !other.alive) continue;
+        // Check head vs other body (skip head of other)
+        for (let i = 1; i < other.segments.length; i++) {
+          const seg = other.segments[i];
+          if (dist(head, seg) < SNAKE_RADIUS * 2) {
+            killSnake(snake, game);
+            return;
+          }
+        }
+      }
+    };
+
+    const updateBot = (bot: Snake, game: GameState) => {
+      if (!bot.alive) return;
+
+      const head = bot.segments[0];
+
+      // Find nearest food
+      let nearestFood: Food | null = null;
+      let nearestDist = Infinity;
+      for (const f of game.food) {
+        const d = dist(head, f);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestFood = f;
+        }
+      }
+
+      let targetAngle = bot.angle;
+      if (nearestFood) {
+        targetAngle = angleTo(head, nearestFood);
+      }
+
+      // Avoid boundary
+      const distToCenter = dist(head, { x: WORLD_RADIUS, y: WORLD_RADIUS });
+      if (distToCenter > WORLD_RADIUS * 0.8) {
+        targetAngle = angleTo(head, { x: WORLD_RADIUS, y: WORLD_RADIUS });
+      }
+
+      // Avoid other snakes (simple)
+      const allSnakes = [game.player, ...game.bots];
+      for (const other of allSnakes) {
+        if (other.id === bot.id || !other.alive) continue;
+        for (let i = 0; i < Math.min(other.segments.length, 20); i++) {
+          const seg = other.segments[i];
+          const d = dist(head, seg);
+          if (d < 60) {
+            const away = angleTo(seg, head);
+            targetAngle = away;
+            break;
+          }
+        }
+      }
+
+      moveSnake(bot, targetAngle);
+    };
+
+    const respawnBot = (bot: Snake) => {
+      const pos = randomInCircle(WORLD_RADIUS * 0.7);
+      const angle = Math.random() * Math.PI * 2;
+      bot.segments = [];
+      for (let i = 0; i < INITIAL_LENGTH; i++) {
+        bot.segments.push({
+          x: pos.x - Math.cos(angle) * i * SEGMENT_SPACING,
+          y: pos.y - Math.sin(angle) * i * SEGMENT_SPACING,
+        });
+      }
+      bot.angle = angle;
+      bot.alive = true;
+      bot.score = INITIAL_LENGTH;
+      bot.boosting = false;
+    };
+
+    const drawGame = (game: GameState) => {
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Camera
+      const head = game.player.segments[0];
+      game.camera.x += (head.x - game.camera.x) * 0.1;
+      game.camera.y += (head.y - game.camera.y) * 0.1;
+      const camX = game.camera.x - w / 2;
+      const camY = game.camera.y - h / 2;
+
+      // Clear
+      ctx.fillStyle = "#0a0a0a";
+      ctx.fillRect(0, 0, w, h);
+
+      // Grid
+      ctx.strokeStyle = "rgba(255,255,255,0.03)";
+      ctx.lineWidth = 1;
+      const gridSize = 50;
+      const startX = -((camX % gridSize) + gridSize) % gridSize;
+      const startY = -((camY % gridSize) + gridSize) % gridSize;
+      for (let x = startX; x < w; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = startY; y < h; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // Arena boundary circle
+      const centerScreenX = WORLD_RADIUS - camX;
+      const centerScreenY = WORLD_RADIUS - camY;
+      ctx.beginPath();
+      ctx.arc(centerScreenX, centerScreenY, WORLD_RADIUS, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,50,50,0.3)";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Viewport bounds for culling
+      const vpLeft = camX - 50;
+      const vpRight = camX + w + 50;
+      const vpTop = camY - 50;
+      const vpBottom = camY + h + 50;
+
+      // Food
+      for (const f of game.food) {
+        if (f.x < vpLeft || f.x > vpRight || f.y < vpTop || f.y > vpBottom) continue;
+        const sx = f.x - camX;
+        const sy = f.y - camY;
+        ctx.beginPath();
+        ctx.arc(sx, sy, f.radius, 0, Math.PI * 2);
+        ctx.fillStyle = f.color;
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      // Draw snakes
+      const allSnakes = [game.player, ...game.bots];
+      for (const snake of allSnakes) {
+        if (!snake.alive) continue;
+        // Draw body segments (back to front)
+        for (let i = snake.segments.length - 1; i >= 0; i--) {
+          const seg = snake.segments[i];
+          if (seg.x < vpLeft || seg.x > vpRight || seg.y < vpTop || seg.y > vpBottom) continue;
+          const sx = seg.x - camX;
+          const sy = seg.y - camY;
+          const radius = SNAKE_RADIUS * (1 - i * 0.002);
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(radius, 4), 0, Math.PI * 2);
+          ctx.fillStyle = snake.color;
+          ctx.globalAlpha = i === 0 ? 1 : 0.85;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        // Draw eyes on head
+        const headSeg = snake.segments[0];
+        const hsx = headSeg.x - camX;
+        const hsy = headSeg.y - camY;
+        if (hsx > -50 && hsx < w + 50 && hsy > -50 && hsy < h + 50) {
+          const eyeOffset = 4;
+          const eyeAngle1 = snake.angle + 0.5;
+          const eyeAngle2 = snake.angle - 0.5;
+          ctx.beginPath();
+          ctx.arc(hsx + Math.cos(eyeAngle1) * eyeOffset, hsy + Math.sin(eyeAngle1) * eyeOffset, 3, 0, Math.PI * 2);
+          ctx.fillStyle = "#fff";
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(hsx + Math.cos(eyeAngle2) * eyeOffset, hsy + Math.sin(eyeAngle2) * eyeOffset, 3, 0, Math.PI * 2);
+          ctx.fillStyle = "#fff";
+          ctx.fill();
+          // Pupils
+          ctx.beginPath();
+          ctx.arc(hsx + Math.cos(eyeAngle1) * (eyeOffset + 1), hsy + Math.sin(eyeAngle1) * (eyeOffset + 1), 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = "#000";
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(hsx + Math.cos(eyeAngle2) * (eyeOffset + 1), hsy + Math.sin(eyeAngle2) * (eyeOffset + 1), 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = "#000";
+          ctx.fill();
+        }
+      }
+
+      // Minimap
+      const mmX = w - MINIMAP_SIZE - MINIMAP_MARGIN;
+      const mmY = h - MINIMAP_SIZE - MINIMAP_MARGIN;
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(mmX, mmY, MINIMAP_SIZE, MINIMAP_SIZE);
+      ctx.strokeStyle = "rgba(255,255,255,0.2)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(mmX, mmY, MINIMAP_SIZE, MINIMAP_SIZE);
+
+      // Minimap boundary circle
+      const mmScale = MINIMAP_SIZE / WORLD_SIZE;
+      ctx.beginPath();
+      ctx.arc(mmX + MINIMAP_SIZE / 2, mmY + MINIMAP_SIZE / 2, WORLD_RADIUS * mmScale, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,50,50,0.5)";
+      ctx.stroke();
+
+      // Minimap snakes
+      for (const snake of allSnakes) {
+        if (!snake.alive) continue;
+        const s = snake.segments[0];
+        const mx = mmX + s.x * mmScale;
+        const my = mmY + s.y * mmScale;
+        ctx.beginPath();
+        ctx.arc(mx, my, snake.id === 0 ? 3 : 2, 0, Math.PI * 2);
+        ctx.fillStyle = snake.color;
+        ctx.fill();
+      }
+
+      // Score
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 24px Fraunces, serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`Score: ${game.player.score}`, w / 2, 40);
+    };
+
+    const loop = () => {
+      if (!running) return;
+      const game = gameRef.current;
+      if (!game || game.gameOver) {
+        animRef.current = requestAnimationFrame(loop);
+        return;
+      }
+
+      // Move player
+      const head = game.player.segments[0];
+      const targetAngle = angleTo(head, game.mousePos);
+      moveSnake(game.player, targetAngle);
+
+      // Update bots
+      for (const bot of game.bots) {
+        if (!bot.alive) {
+          // Respawn after some time (just respawn immediately for simplicity)
+          if (Math.random() < 0.01) {
+            respawnBot(bot);
+          }
+          continue;
+        }
+        updateBot(bot, game);
+      }
+
+      // Check food collisions
+      const allSnakes = [game.player, ...game.bots];
+      for (const snake of allSnakes) {
+        checkFoodCollision(snake, game);
+      }
+
+      // Check snake collisions
+      for (const snake of allSnakes) {
+        checkSnakeCollision(snake, allSnakes, game);
+      }
+
+      // Check boundary
+      for (const snake of allSnakes) {
+        checkBoundary(snake, game);
+      }
+
+      // Check player death
+      if (!game.player.alive) {
+        game.gameOver = true;
+        scoreRef.current = game.player.score;
+        setFinalScore(game.player.score);
+        setScreen("gameover");
+      }
+
+      // Draw
+      drawGame(game);
+
+      animRef.current = requestAnimationFrame(loop);
+    };
+
+    animRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(animRef.current);
+      window.removeEventListener("resize", resizeCanvas);
+    };
+  }, [screen]);
+
+  if (screen === "start") {
+    return (
+      <Shell>
+        <div className="flex flex-col items-center justify-center h-full gap-6">
+          <h1
+            className="text-4xl font-bold"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            slither
+          </h1>
+          <p style={{ color: "var(--muted)" }}>
+            Eat food, grow longer, don&apos;t crash into others!
+          </p>
+          <button
+            onClick={startGame}
+            className="px-8 py-4 text-lg font-bold text-white rounded-xl cursor-pointer"
+            style={{ background: "var(--accent)", borderRadius: "0.75rem" }}
+          >
+            Tap to Play
+          </button>
+          <div className="text-sm mt-4" style={{ color: "var(--muted)" }}>
+            <p>Mouse/touch = direction</p>
+            <p>Click/hold = boost (costs length)</p>
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (screen === "gameover") {
+    return (
+      <Shell>
+        <div className="flex flex-col items-center justify-center h-full gap-6">
+          <h1
+            className="text-4xl font-bold"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            Game Over
+          </h1>
+          <p
+            className="text-2xl"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            Score: {finalScore}
+          </p>
+          <button
+            onClick={startGame}
+            className="px-8 py-4 text-lg font-bold text-white rounded-xl cursor-pointer"
+            style={{ background: "var(--accent)", borderRadius: "0.75rem" }}
+          >
+            Play Again
+          </button>
+        </div>
+      </Shell>
+    );
+  }
+
+  // Playing
   return (
-    <Shell>
-      <h1
-        className="text-3xl font-bold mb-4"
-        style={{ fontFamily: "Fraunces, serif" }}
-      >
-        Welcome to APPNAME
-      </h1>
-      <p style={{ color: "var(--muted)" }}>
-        Edit <code>src/App.tsx</code> to get started.
-      </p>
-    </Shell>
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        display: "block",
+        cursor: "none",
+      }}
+    />
   );
 }

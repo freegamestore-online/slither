@@ -1,6 +1,6 @@
 {
-  "name": "APPNAME",
-  "short_name": "APPNAME",
+  "name": "slither",
+  "short_name": "slither",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
