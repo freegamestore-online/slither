@@ -102,8 +102,10 @@ export default function App() {
   const gameRef = useRef<GameState | null>(null);
   const animRef = useRef<number>(0);
   const [screen, setScreen] = useState<Screen>("playing");
+  const [paused, setPaused] = useState(false);
   const [finalScore, setFinalScore] = useState(0);
   const scoreRef = useRef(0);
+  const pausedRef = useRef(false);
 
   const initGame = useCallback(() => {
     const player = createSnake(0, "#00ff88");
@@ -650,6 +652,12 @@ export default function App() {
         return;
       }
 
+      if (pausedRef.current) {
+        drawGame(game);
+        animRef.current = requestAnimationFrame(loop);
+        return;
+      }
+
       // Move player
       const head = game.player.segments[0];
       const targetAngle = angleTo(head, game.mousePos);
@@ -713,6 +721,7 @@ export default function App() {
           <GameTopbar
             title="Slither"
             stats={[{ label: "Score", value: finalScore, accent: true }]}
+            onRestart={startGame}
             rules={<div><h3 style={{fontWeight:700}}>Slither</h3><h4 style={{fontWeight:600}}>Controls</h4><ul><li>Mouse/touch to steer</li><li>Click/hold or two-finger tap to boost (costs length)</li><li>Arrow keys also work</li></ul><h4 style={{fontWeight:600}}>Rules</h4><ul><li>Eat glowing orbs to grow longer</li><li>Avoid hitting other snakes</li><li>Use boost to speed up (costs length)</li><li>Last snake alive wins</li></ul></div>}
           />
         }
@@ -742,19 +751,39 @@ export default function App() {
     );
   }
 
+  const togglePause = useCallback(() => {
+    setPaused(p => {
+      pausedRef.current = !p;
+      return !p;
+    });
+  }, []);
+
   // Playing
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
-        display: "block",
-        cursor: "crosshair",
-      }}
-    />
+    <GameShell
+      topbar={
+        <GameTopbar
+          title="Slither"
+          stats={[{ label: "Score", value: gameRef.current?.player.score ?? 0, accent: true }]}
+          onPlayPause={togglePause}
+          paused={paused}
+          onRestart={startGame}
+          rules={<div><h3 style={{fontWeight:700}}>Slither</h3><h4 style={{fontWeight:600}}>Controls</h4><ul><li>Mouse/touch to steer</li><li>Click/hold or two-finger tap to boost (costs length)</li><li>Arrow keys also work</li></ul><h4 style={{fontWeight:600}}>Rules</h4><ul><li>Eat glowing orbs to grow longer</li><li>Avoid hitting other snakes</li><li>Use boost to speed up (costs length)</li><li>Last snake alive wins</li></ul></div>}
+        />
+      }
+    >
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          display: "block",
+          cursor: "crosshair",
+        }}
+      />
+    </GameShell>
   );
 }
