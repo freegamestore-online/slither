@@ -259,8 +259,10 @@ export default function App() {
     let running = true;
 
     const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      canvas.width = parent.clientWidth;
+      canvas.height = parent.clientHeight;
     };
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
