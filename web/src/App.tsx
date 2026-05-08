@@ -1,7 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { Shell } from "./components/Shell";
-import { Leaderboard } from "./components/Leaderboard";
-import { useLeaderboard } from "./hooks/useLeaderboard";
+import { GameShell, GameTopbar } from "@freeappstore/games";
 
 // --- Types ---
 interface Vec2 {
@@ -106,7 +104,6 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("start");
   const [finalScore, setFinalScore] = useState(0);
   const scoreRef = useRef(0);
-  const { topScores, recentScores, submitScore, loading } = useLeaderboard("slither");
 
   const initGame = useCallback(() => {
     const player = createSnake(0, "#00ff88");
@@ -686,7 +683,6 @@ export default function App() {
         game.gameOver = true;
         scoreRef.current = game.player.score;
         setFinalScore(game.player.score);
-        submitScore(game.player.score);
         setScreen("gameover");
       }
 
@@ -707,7 +703,9 @@ export default function App() {
 
   if (screen === "start") {
     return (
-      <Shell>
+      <GameShell
+        topbar={<GameTopbar title="Slither" />}
+      >
         <div className="flex flex-col items-center justify-center h-full gap-6">
           <h1
             className="text-4xl font-bold"
@@ -729,18 +727,21 @@ export default function App() {
             <p>Mouse/touch = direction</p>
             <p>Click/hold = boost (costs length)</p>
           </div>
-          <div className="mt-2 border-t" style={{ borderColor: "var(--line)" }}>
-            <div className="text-xs font-semibold px-4 pt-3" style={{ color: "var(--muted)" }}>Leaderboard</div>
-            <Leaderboard topScores={topScores} recentScores={recentScores} loading={loading} />
-          </div>
         </div>
-      </Shell>
+      </GameShell>
     );
   }
 
   if (screen === "gameover") {
     return (
-      <Shell>
+      <GameShell
+        topbar={
+          <GameTopbar
+            title="Slither"
+            stats={[{ label: "Score", value: finalScore, accent: true }]}
+          />
+        }
+      >
         <div className="flex flex-col items-center justify-center h-full gap-6">
           <h1
             className="text-4xl font-bold"
@@ -761,12 +762,8 @@ export default function App() {
           >
             Play Again
           </button>
-          <div className="mt-2 border-t" style={{ borderColor: "var(--line)" }}>
-            <div className="text-xs font-semibold px-4 pt-3" style={{ color: "var(--muted)" }}>Leaderboard</div>
-            <Leaderboard topScores={topScores} recentScores={recentScores} loading={loading} />
-          </div>
         </div>
-      </Shell>
+      </GameShell>
     );
   }
 
