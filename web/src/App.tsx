@@ -627,21 +627,7 @@ export default function App() {
       }
       ctx.restore();
 
-      // Score HUD — top center with glass background
-      const scoreText = `${game.player.score}`;
-      const lengthText = `Length: ${game.player.segments.length}`;
-      ctx.font = "bold 32px Fraunces, serif";
-      ctx.textAlign = "center";
-      const tw = Math.max(ctx.measureText(scoreText).width, 80) + 40;
-      ctx.fillStyle = "rgba(0,0,0,0.4)";
-      ctx.beginPath();
-      ctx.roundRect(w / 2 - tw / 2, 12, tw, 52, 12);
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.fillText(scoreText, w / 2, 46);
-      ctx.font = "500 11px Manrope, sans-serif";
-      ctx.fillStyle = "rgba(255,255,255,0.5)";
-      ctx.fillText(lengthText, w / 2, 58);
+      // Score relayed to topbar via stats prop — no in-canvas HUD
     };
 
     const loop = () => {
@@ -775,11 +761,8 @@ export default function App() {
       <canvas
         ref={canvasRef}
         style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          width: "100vw",
-          height: "100vh",
+          width: "100%",
+          height: "100%",
           display: "block",
           cursor: "crosshair",
         }}
