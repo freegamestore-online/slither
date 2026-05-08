@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { GameShell, GameTopbar, GameAuth } from "@freegamestore/games";
+import { GameShell, GameTopbar } from "@freegamestore/games";
 
 // --- Types ---
 interface Vec2 {
@@ -101,7 +101,7 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<GameState | null>(null);
   const animRef = useRef<number>(0);
-  const [screen, setScreen] = useState<Screen>("start");
+  const [screen, setScreen] = useState<Screen>("playing");
   const [finalScore, setFinalScore] = useState(0);
   const scoreRef = useRef(0);
 
@@ -130,6 +130,11 @@ export default function App() {
   const startGame = useCallback(() => {
     initGame();
     setScreen("playing");
+  }, [initGame]);
+
+  // Initialize game state on mount
+  useEffect(() => {
+    initGame();
   }, [initGame]);
 
   // Input handlers
@@ -700,40 +705,6 @@ export default function App() {
       window.removeEventListener("resize", resizeCanvas);
     };
   }, [screen]);
-
-  if (screen === "start") {
-    return (
-      <GameShell
-        topbar={<GameTopbar title="Slither"
-          actions={<GameAuth />}
-          rules={<div><h3 style={{fontWeight:700}}>Slither</h3><h4 style={{fontWeight:600}}>Controls</h4><ul><li>Mouse/touch to steer</li><li>Click/hold or two-finger tap to boost (costs length)</li><li>Arrow keys also work</li></ul><h4 style={{fontWeight:600}}>Rules</h4><ul><li>Eat glowing orbs to grow longer</li><li>Avoid hitting other snakes</li><li>Use boost to speed up (costs length)</li><li>Last snake alive wins</li></ul></div>}
-        />}
-      >
-        <div className="flex flex-col items-center justify-center h-full gap-6">
-          <h1
-            className="text-4xl font-bold"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            slither
-          </h1>
-          <p style={{ color: "var(--muted)" }}>
-            Eat food, grow longer, don&apos;t crash into others!
-          </p>
-          <button
-            onClick={startGame}
-            className="px-8 py-4 text-lg font-bold text-white rounded-xl cursor-pointer"
-            style={{ background: "var(--accent)", borderRadius: "0.75rem" }}
-          >
-            Tap to Play
-          </button>
-          <div className="text-sm mt-4" style={{ color: "var(--muted)" }}>
-            <p>Mouse/touch = direction</p>
-            <p>Click/hold = boost (costs length)</p>
-          </div>
-        </div>
-      </GameShell>
-    );
-  }
 
   if (screen === "gameover") {
     return (
