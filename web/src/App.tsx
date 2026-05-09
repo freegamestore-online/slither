@@ -9,7 +9,7 @@ interface Vec2 {
 
 interface Snake {
   id: number;
-  segments: Vec2[];
+  body: Vec2[];
   color: string;
   speed: number;
   angle: number;
@@ -84,14 +84,14 @@ function createFood(): Food {
 function createSnake(id: number, color: string): Snake {
   const pos = randomInCircle(WORLD_RADIUS * 0.7);
   const angle = Math.random() * Math.PI * 2;
-  const segments: Vec2[] = [];
+  const body: Vec2[] = [];
   for (let i = 0; i < INITIAL_LENGTH; i++) {
-    segments.push({
+    body.push({
       x: pos.x - Math.cos(angle) * i * SEGMENT_SPACING,
       y: pos.y - Math.sin(angle) * i * SEGMENT_SPACING,
     });
   }
-  return { id, segments, color, speed: BASE_SPEED, angle, alive: true, boosting: false, score: INITIAL_LENGTH };
+  return { id, body, color, speed: BASE_SPEED, angle, alive: true, boosting: false, score: INITIAL_LENGTH };
 }
 
 // --- Component ---
@@ -117,7 +117,7 @@ export default function App() {
     for (let i = 0; i < FOOD_COUNT; i++) {
       food.push(createFood());
     }
-    const head = player.segments[0];
+    const head = player.body[0];
     gameRef.current = {
       player,
       bots,
@@ -220,7 +220,7 @@ export default function App() {
       if (keysDown.has('ArrowUp')) dy -= 1;
       if (keysDown.has('ArrowDown')) dy += 1;
       if (dx !== 0 || dy !== 0) {
-        const head = game.player.segments[0];
+        const head = game.player.body[0];
         game.mousePos = { x: head.x + dx * KEYBOARD_DIST, y: head.y + dy * KEYBOARD_DIST };
       }
     }, 16);
@@ -279,24 +279,24 @@ export default function App() {
       snake.speed = speed;
 
       // Move head
-      const head = snake.segments[0];
+      const head = snake.body[0];
       const newHead = {
         x: head.x + Math.cos(snake.angle) * speed,
         y: head.y + Math.sin(snake.angle) * speed,
       };
-      snake.segments.unshift(newHead);
+      snake.body.unshift(newHead);
 
-      // Maintain segment spacing
-      while (snake.segments.length > snake.score) {
-        snake.segments.pop();
+      // Maintain body spacing
+      while (snake.body.length > snake.score) {
+        snake.body.pop();
       }
 
       // Boosting shrinks
       if (snake.boosting && snake.score > 10) {
         if (Math.random() < 0.1) {
           snake.score--;
-          if (snake.segments.length > snake.score) {
-            snake.segments.pop();
+          if (snake.body.length > snake.score) {
+            snake.body.pop();
           }
         }
       }
@@ -304,7 +304,7 @@ export default function App() {
 
     const checkBoundary = (snake: Snake, game: GameState) => {
       if (!snake.alive) return;
-      const head = snake.segments[0];
+      const head = snake.body[0];
       const d = dist(head, { x: WORLD_RADIUS, y: WORLD_RADIUS });
       if (d > WORLD_RADIUS) {
         killSnake(snake, game);
@@ -314,8 +314,8 @@ export default function App() {
     const killSnake = (snake: Snake, game: GameState) => {
       snake.alive = false;
       // Drop food along body
-      for (let i = 0; i < snake.segments.length; i += 3) {
-        const seg = snake.segments[i];
+      for (let i = 0; i < snake.body.length; i += 3) {
+        const seg = snake.body[i];
         game.food.push({
           x: seg.x + (Math.random() - 0.5) * 10,
           y: seg.y + (Math.random() - 0.5) * 10,
@@ -327,7 +327,7 @@ export default function App() {
 
     const checkFoodCollision = (snake: Snake, game: GameState) => {
       if (!snake.alive) return;
-      const head = snake.segments[0];
+      const head = snake.body[0];
       for (let i = game.food.length - 1; i >= 0; i--) {
         const f = game.food[i];
         if (dist(head, f) < SNAKE_RADIUS + f.radius) {
@@ -341,12 +341,12 @@ export default function App() {
 
     const checkSnakeCollision = (snake: Snake, allSnakes: Snake[], game: GameState) => {
       if (!snake.alive) return;
-      const head = snake.segments[0];
+      const head = snake.body[0];
       for (const other of allSnakes) {
         if (other.id === snake.id || !other.alive) continue;
         // Check head vs other body (skip head of other)
-        for (let i = 1; i < other.segments.length; i++) {
-          const seg = other.segments[i];
+        for (let i = 1; i < other.body.length; i++) {
+          const seg = other.body[i];
           if (dist(head, seg) < SNAKE_RADIUS * 2) {
             killSnake(snake, game);
             return;
@@ -358,7 +358,7 @@ export default function App() {
     const updateBot = (bot: Snake, game: GameState) => {
       if (!bot.alive) return;
 
-      const head = bot.segments[0];
+      const head = bot.body[0];
 
       // Find nearest food
       let nearestFood: Food | null = null;
@@ -386,8 +386,8 @@ export default function App() {
       const allSnakes = [game.player, ...game.bots];
       for (const other of allSnakes) {
         if (other.id === bot.id || !other.alive) continue;
-        for (let i = 0; i < Math.min(other.segments.length, 20); i++) {
-          const seg = other.segments[i];
+        for (let i = 0; i < Math.min(other.body.length, 20); i++) {
+          const seg = other.body[i];
           const d = dist(head, seg);
           if (d < 60) {
             const away = angleTo(seg, head);
@@ -403,9 +403,9 @@ export default function App() {
     const respawnBot = (bot: Snake) => {
       const pos = randomInCircle(WORLD_RADIUS * 0.7);
       const angle = Math.random() * Math.PI * 2;
-      bot.segments = [];
+      bot.body = [];
       for (let i = 0; i < INITIAL_LENGTH; i++) {
-        bot.segments.push({
+        bot.body.push({
           x: pos.x - Math.cos(angle) * i * SEGMENT_SPACING,
           y: pos.y - Math.sin(angle) * i * SEGMENT_SPACING,
         });
@@ -421,7 +421,7 @@ export default function App() {
       const h = canvas.height;
 
       // Camera
-      const head = game.player.segments[0];
+      const head = game.player.body[0];
       game.camera.x += (head.x - game.camera.x) * 0.1;
       game.camera.y += (head.y - game.camera.y) * 0.1;
       const camX = game.camera.x - w / 2;
@@ -502,8 +502,8 @@ export default function App() {
         const isPlayer = snake.id === 0;
 
         // Body glow (player only for performance)
-        if (isPlayer && snake.segments.length > 0) {
-          const h0 = snake.segments[0];
+        if (isPlayer && snake.body.length > 0) {
+          const h0 = snake.body[0];
           const gsx = h0.x - camX;
           const gsy = h0.y - camY;
           const bodyGlow = ctx.createRadialGradient(gsx, gsy, 0, gsx, gsy, 80);
@@ -513,13 +513,13 @@ export default function App() {
           ctx.fillRect(gsx - 80, gsy - 80, 160, 160);
         }
 
-        // Draw body segments (back to front) with stripe pattern
-        for (let i = snake.segments.length - 1; i >= 0; i--) {
-          const seg = snake.segments[i];
+        // Draw body parts (back to front) with stripe pattern
+        for (let i = snake.body.length - 1; i >= 0; i--) {
+          const seg = snake.body[i];
           if (seg.x < vpLeft || seg.x > vpRight || seg.y < vpTop || seg.y > vpBottom) continue;
           const sx = seg.x - camX;
           const sy = seg.y - camY;
-          const taper = 1 - (i / snake.segments.length) * 0.4;
+          const taper = 1 - (i / snake.body.length) * 0.4;
           const radius = Math.max(SNAKE_RADIUS * taper, 3);
 
           // Shadow/outline
@@ -547,7 +547,7 @@ export default function App() {
         }
 
         // Head — larger with gradient
-        const headSeg = snake.segments[0];
+        const headSeg = snake.body[0];
         const hsx = headSeg.x - camX;
         const hsy = headSeg.y - camY;
         if (hsx > -50 && hsx < w + 50 && hsy > -50 && hsy < h + 50) {
@@ -612,7 +612,7 @@ export default function App() {
 
       for (const snake of allSnakes) {
         if (!snake.alive) continue;
-        const s = snake.segments[0];
+        const s = snake.body[0];
         const mx = mmX + s.x * mmScale;
         const my = mmY + s.y * mmScale;
         ctx.beginPath();
@@ -647,7 +647,7 @@ export default function App() {
       }
 
       // Move player
-      const head = game.player.segments[0];
+      const head = game.player.body[0];
       const targetAngle = angleTo(head, game.mousePos);
       moveSnake(game.player, targetAngle);
 
