@@ -702,43 +702,6 @@ export default function App() {
     };
   }, [screen]);
 
-  if (screen === "gameover") {
-    return (
-      <GameShell
-        topbar={
-          <GameTopbar
-            title="Slither"
-            stats={[{ label: "Score", value: finalScore, accent: true }]}
-            onRestart={startGame}
-            rules={<div><h3 style={{fontWeight:700}}>Slither</h3><h4 style={{fontWeight:600}}>Controls</h4><ul><li>Mouse/touch to steer</li><li>Click/hold or two-finger tap to boost (costs length)</li><li>Arrow keys also work</li></ul><h4 style={{fontWeight:600}}>Rules</h4><ul><li>Eat glowing orbs to grow longer</li><li>Avoid hitting other snakes</li><li>Use boost to speed up (costs length)</li><li>Last snake alive wins</li></ul></div>}
-          />
-        }
-      >
-        <div className="flex flex-col items-center justify-center h-full gap-6">
-          <h1
-            className="text-4xl font-bold"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Game Over
-          </h1>
-          <p
-            className="text-2xl"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Score: {finalScore}
-          </p>
-          <button
-            onClick={startGame}
-            className="px-8 py-4 text-lg font-bold text-white rounded-xl cursor-pointer"
-            style={{ background: "var(--accent)", borderRadius: "0.75rem" }}
-          >
-            Play Again
-          </button>
-        </div>
-      </GameShell>
-    );
-  }
-
   const togglePause = useCallback(() => {
     setPaused(p => {
       pausedRef.current = !p;
@@ -746,29 +709,47 @@ export default function App() {
     });
   }, []);
 
-  // Playing
+  const rulesContent = <div><h3 style={{fontWeight:700}}>Slither</h3><h4 style={{fontWeight:600}}>Controls</h4><ul><li>Mouse/touch to steer</li><li>Click/hold to boost (costs length)</li></ul><h4 style={{fontWeight:600}}>Rules</h4><ul><li>Eat orbs to grow</li><li>Avoid hitting other snakes</li><li>Boost speeds you up but costs length</li></ul></div>;
+
   return (
     <GameShell
       topbar={
         <GameTopbar
           title="Slither"
-          stats={[{ label: "Score", value: gameRef.current?.player.score ?? 0, accent: true }]}
-          onPlayPause={togglePause}
+          stats={[{ label: "Score", value: screen === "gameover" ? finalScore : (scoreRef.current || 0), accent: true }]}
+          onPlayPause={screen === "playing" ? togglePause : undefined}
           paused={paused}
           onRestart={startGame}
-          rules={<div><h3 style={{fontWeight:700}}>Slither</h3><h4 style={{fontWeight:600}}>Controls</h4><ul><li>Mouse/touch to steer</li><li>Click/hold or two-finger tap to boost (costs length)</li><li>Arrow keys also work</li></ul><h4 style={{fontWeight:600}}>Rules</h4><ul><li>Eat glowing orbs to grow longer</li><li>Avoid hitting other snakes</li><li>Use boost to speed up (costs length)</li><li>Last snake alive wins</li></ul></div>}
+          rules={rulesContent}
+          actions={<GameAuth />}
         />
       }
     >
-      <canvas
-        ref={canvasRef}
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "block",
-          cursor: "crosshair",
-        }}
-      />
+      <div className="relative w-full h-full">
+        <canvas
+          ref={canvasRef}
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "block",
+            cursor: "crosshair",
+          }}
+        />
+        {screen === "gameover" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4" style={{ background: "rgba(0,0,0,0.6)" }}>
+            <p className="text-xl font-bold" style={{ color: "var(--error)", fontFamily: "Fraunces, serif" }}>
+              Game Over! Score: {finalScore}
+            </p>
+            <button
+              onClick={startGame}
+              className="px-6 py-3 rounded-xl font-semibold min-h-[2.75rem]"
+              style={{ background: "var(--accent)", color: "#fff" }}
+            >
+              Play Again
+            </button>
+          </div>
+        )}
+      </div>
     </GameShell>
   );
 }
