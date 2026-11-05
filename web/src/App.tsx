@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { GameShell, GameTopbar, GameAuth } from "@freegamestore/games";
-import { WORLD_RADIUS, WORLD_SIZE, SNAKE_RADIUS, createGame, step, type GameState } from "./game";
+import { WORLD_RADIUS, WORLD_SIZE, SNAKE_RADIUS, createGame, fixedSteps, step, type GameState } from "./game";
 
 const MINIMAP_SIZE = 140;
 const MINIMAP_MARGIN = 16;
@@ -14,7 +14,7 @@ export default function App() {
   const animRef = useRef<number>(0);
   const [screen, setScreen] = useState<Screen>("playing");
   const [paused, setPaused] = useState(false);
-  const [finalScore, setFinalScore] = useState(0);
+  const [score, setScore] = useState(0);
   const scoreRef = useRef(0);
   const pausedRef = useRef(false);
 
@@ -24,6 +24,8 @@ export default function App() {
 
   const startGame = useCallback(() => {
     initGame();
+    pausedRef.current = false;
+    setPaused(false);
     setScreen("playing");
   }, [initGame]);
 
@@ -43,12 +45,11 @@ export default function App() {
       const game = gameRef.current;
       if (!game || game.gameOver) return;
       const rect = canvas.getBoundingClientRect();
-      const cx = rect.width / 2;
-      const cy = rect.height / 2;
-      const dx = clientX - rect.left - cx;
-      const dy = clientY - rect.top - cy;
-      // Convert screen offset to world position relative to camera
-      game.mousePos = { x: game.camera.x + dx, y: game.camera.y + dy };
+      // Steer toward the pointer's direction from the screen centre (where
+      // the camera keeps the head).
+      const dx = clientX - rect.left - rect.width / 2;
+      const dy = clientY - rect.top - rect.height / 2;
+      if (dx !== 0 || dy !== 0) game.steerAngle = Math.atan2(dy, dx);
     };
 
     const onMouseMove = (e: MouseEvent) => updateMouse(e.clientX, e.clientY);
@@ -87,24 +88,7 @@ export default function App() {
 
     // Keyboard support: arrow keys set direction, space = boost
     const keysDown = new Set<string>();
-    const KEYBOARD_DIST = 300;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
-      keysDown.add(e.key);
-      if (e.key === ' ') {
-        const game = gameRef.current;
-        if (game) game.player.boosting = true;
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      keysDown.delete(e.key);
-      if (e.key === ' ') {
-        const game = gameRef.current;
-        if (game) game.player.boosting = false;
-      }
-    };
-    // Poll keyboard direction each frame via an interval
-    const keyInterval = setInterval(() => {
+    const steerFromKeys = () => {
       const game = gameRef.current;
       if (!game || game.gameOver) return;
       let dx = 0, dy = 0;
@@ -112,15 +96,29 @@ export default function App() {
       if (keysDown.has('ArrowRight')) dx += 1;
       if (keysDown.has('ArrowUp')) dy -= 1;
       if (keysDown.has('ArrowDown')) dy += 1;
-      if (dx !== 0 || dy !== 0) {
-        const head = game.player.body[0];
-        game.mousePos = { x: head.x + dx * KEYBOARD_DIST, y: head.y + dy * KEYBOARD_DIST };
+      if (dx !== 0 || dy !== 0) game.steerAngle = Math.atan2(dy, dx);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+      keysDown.add(e.key);
+      steerFromKeys();
+      if (e.key === ' ') {
+        const game = gameRef.current;
+        if (game) game.player.boosting = true;
       }
-    }, 16);
-
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      keysDown.delete(e.key);
+      steerFromKeys();
+      if (e.key === ' ') {
+        const game = gameRef.current;
+        if (game) game.player.boosting = false;
+      }
+    };
     canvas.addEventListener("mousemove", onMouseMove);
     canvas.addEventListener("mousedown", onMouseDown);
-    canvas.addEventListener("mouseup", onMouseUp);
+    // On window so releasing off the canvas still ends the boost.
+    window.addEventListener("mouseup", onMouseUp);
     canvas.addEventListener("touchmove", onTouchMove, { passive: false });
     canvas.addEventListener("touchstart", onTouchStart, { passive: false });
     canvas.addEventListener("touchend", onTouchEnd);
@@ -130,13 +128,12 @@ export default function App() {
     return () => {
       canvas.removeEventListener("mousemove", onMouseMove);
       canvas.removeEventListener("mousedown", onMouseDown);
-      canvas.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("mouseup", onMouseUp);
       canvas.removeEventListener("touchmove", onTouchMove);
       canvas.removeEventListener("touchstart", onTouchStart);
       canvas.removeEventListener("touchend", onTouchEnd);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      clearInterval(keyInterval);
     };
   }, [screen]);
 
@@ -151,23 +148,23 @@ export default function App() {
 
     let running = true;
 
+    // Backing store at device pixels for a sharp canvas; draw in CSS pixels.
+    let w = 0;
+    let h = 0;
     const resizeCanvas = () => {
       const parent = canvas.parentElement;
       if (!parent) return;
-      canvas.width = parent.clientWidth;
-      canvas.height = parent.clientHeight;
+      const dpr = window.devicePixelRatio || 1;
+      w = parent.clientWidth;
+      h = parent.clientHeight;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
 
     const drawGame = (game: GameState) => {
-      const w = canvas.width;
-      const h = canvas.height;
-
-      // Camera
-      const head = game.player.body[0];
-      game.camera.x += (head.x - game.camera.x) * 0.1;
-      game.camera.y += (head.y - game.camera.y) * 0.1;
       const camX = game.camera.x - w / 2;
       const camY = game.camera.y - h / 2;
 
@@ -376,8 +373,12 @@ export default function App() {
       // Score relayed to topbar via stats prop — no in-canvas HUD
     };
 
-    const loop = () => {
+    let last = performance.now();
+    let acc = 0;
+    const loop = (now: number) => {
       if (!running) return;
+      const dt = now - last;
+      last = now;
       const game = gameRef.current;
       if (!game || game.gameOver) {
         animRef.current = requestAnimationFrame(loop);
@@ -390,13 +391,18 @@ export default function App() {
         return;
       }
 
-      step(game);
+      const frame = fixedSteps(acc, dt);
+      acc = frame.acc;
+      for (let i = 0; i < frame.steps && game.player.alive; i++) step(game);
+
+      if (game.player.score !== scoreRef.current) {
+        scoreRef.current = game.player.score;
+        setScore(scoreRef.current);
+      }
 
       // Check player death
       if (!game.player.alive) {
         game.gameOver = true;
-        scoreRef.current = game.player.score;
-        setFinalScore(game.player.score);
         setScreen("gameover");
       }
 
@@ -416,10 +422,8 @@ export default function App() {
   }, [screen]);
 
   const togglePause = useCallback(() => {
-    setPaused(p => {
-      pausedRef.current = !p;
-      return !p;
-    });
+    pausedRef.current = !pausedRef.current;
+    setPaused(pausedRef.current);
   }, []);
 
   const rulesContent = <div><h3 style={{fontWeight:700}}>Slither</h3><h4 style={{fontWeight:600}}>Controls</h4><ul><li>Mouse/touch to steer</li><li>Click/hold to boost (costs length)</li></ul><h4 style={{fontWeight:600}}>Rules</h4><ul><li>Eat orbs to grow</li><li>Avoid hitting other snakes</li><li>Boost speeds you up but costs length</li></ul></div>;
@@ -429,7 +433,7 @@ export default function App() {
       topbar={
         <GameTopbar
           title="Slither"
-          stats={[{ label: "Score", value: screen === "gameover" ? finalScore : (scoreRef.current || 0), accent: true }]}
+          stats={[{ label: "Score", value: score, accent: true }]}
           onPlayPause={screen === "playing" ? togglePause : undefined}
           paused={paused}
           onRestart={startGame}
@@ -451,7 +455,7 @@ export default function App() {
         {screen === "gameover" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4" style={{ background: "rgba(0,0,0,0.6)" }}>
             <p className="text-xl font-bold" style={{ color: "var(--error)", fontFamily: "Fraunces, serif" }}>
-              Game Over! Score: {finalScore}
+              Game Over! Score: {score}
             </p>
             <button
               onClick={startGame}

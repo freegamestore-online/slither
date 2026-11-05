@@ -26,7 +26,9 @@ export interface GameState {
   player: Snake;
   bots: Snake[];
   food: Food[];
-  mousePos: Vec2;
+  // Heading the player steers toward (radians). Input sets a direction, not
+  // a world point, so a still pointer keeps the snake going straight.
+  steerAngle: number;
   camera: Vec2;
   gameOver: boolean;
 }
@@ -42,6 +44,18 @@ const BOT_COUNT = 6;
 export const SNAKE_RADIUS = 8;
 const FOOD_RADIUS = 5;
 const INITIAL_LENGTH = 20;
+
+// The sim is tuned per 60 Hz tick (speeds, turn rate and segment spacing
+// are all per tick), so it runs on a fixed 60 Hz step whatever the display
+// refresh rate. Cap catch-up so a stall doesn't fast-forward the game.
+export const STEP_MS = 1000 / 60;
+const MAX_STEPS_PER_FRAME = 5;
+
+export function fixedSteps(acc: number, dtMs: number): { steps: number; acc: number } {
+  const total = Math.min(acc + dtMs, STEP_MS * MAX_STEPS_PER_FRAME);
+  const steps = Math.floor(total / STEP_MS);
+  return { steps, acc: total - steps * STEP_MS };
+}
 
 const SNAKE_COLORS = [
   "#ff3366", "#33ff66", "#3366ff", "#ffcc33",
@@ -154,8 +168,9 @@ const checkFoodCollision = (snake: Snake, game: GameState) => {
     if (dist(head, f) < SNAKE_RADIUS + f.radius) {
       game.food.splice(i, 1);
       snake.score += 2;
-      // Replenish food
-      game.food.push(createFood());
+      // Replenish food, but don't replace food dropped by dead snakes or
+      // the field grows without bound.
+      if (game.food.length < FOOD_COUNT) game.food.push(createFood());
     }
   }
 };
@@ -252,7 +267,7 @@ export function createGame(): GameState {
     player,
     bots,
     food,
-    mousePos: { x: head.x, y: head.y },
+    steerAngle: player.angle,
     camera: { x: head.x, y: head.y },
     gameOver: false,
   };
@@ -260,10 +275,7 @@ export function createGame(): GameState {
 
 // Advance the simulation one tick: player, bots, then collisions.
 export function step(game: GameState) {
-  // Move player
-  const head = game.player.body[0];
-  const targetAngle = angleTo(head, game.mousePos);
-  moveSnake(game.player, targetAngle);
+  moveSnake(game.player, game.steerAngle);
 
   // Update bots
   for (const bot of game.bots) {
@@ -292,4 +304,9 @@ export function step(game: GameState) {
   for (const snake of allSnakes) {
     checkBoundary(snake, game);
   }
+
+  // Camera follows the head
+  const head = game.player.body[0];
+  game.camera.x += (head.x - game.camera.x) * 0.1;
+  game.camera.y += (head.y - game.camera.y) * 0.1;
 }
